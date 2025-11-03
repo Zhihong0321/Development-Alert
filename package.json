@@ -1,13 +1,15 @@
 {
-  "name": "deployment-alert",
-  "version": "1.0.0",
-  "description": "Audio notifications for Railway deployment events - zero setup integration",
+  "name": "railway-deployment-alert",
+  "version": "2.0.0",
+  "description": "Real-time audio notifications for Railway deployment events via webhooks",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test:webhook": "node test-webhook.js",
+    "test:legacy": "node test-notification.js"
   },
-  "keywords": ["railway", "deployment", "notifications", "audio", "alerts"],
+  "keywords": ["railway", "webhooks", "deployment", "notifications", "audio", "alerts", "real-time"],
   "author": "Zhihong0321",
   "license": "MIT",
   "dependencies": {
@@ -16,5 +18,10 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/railway-deployment-alert.git"
+  },
+  "homepage": "https://github.com/yourusername/railway-deployment-alert#readme"
 }

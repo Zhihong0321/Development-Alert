@@ -1,13 +1,14 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'railway-webhook-secret';
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.raw({ type: 'application/json' })); // For webhook signature verification
 app.use(express.static('public'));
 
 // Store recent notifications for display
@@ -15,36 +16,162 @@ let recentNotifications = [];
 // Store SSE connections for real-time updates
 let sseClients = [];
 
-// Notification endpoint
-app.all('/notify', (req, res) => {
-  const { project, event, timestamp, message } = req.query;
+// Railway webhook event mapping
+const RAILWAY_EVENT_MAP = {
+  'deployment.initialize': 'initializing',
+  'deployment.queued': 'queued', 
+  'deployment.building': 'building',
+  'deployment.deploying': 'deploying',
+  'deployment.success': 'deployment_success',
+  'deployment.failed': 'deployment_failure',
+  'deployment.crashed': 'service_crash',
+  'deployment.sleeping': 'sleeping',
+  'deployment.removed': 'removed',
+  'deployment.skipped': 'skipped'
+};
+
+// Verify Railway webhook signature
+function verifyWebhookSignature(payload, signature) {
+  if (!signature) return false;
+  
+  const expectedSignature = crypto
+    .createHmac('sha256', WEBHOOK_SECRET)
+    .update(payload)
+    .digest('hex');
+    
+  return crypto.timingSafeEqual(
+    Buffer.from(signature, 'hex'),
+    Buffer.from(expectedSignature, 'hex')
+  );
+}
+
+// Railway webhook endpoint
+app.post('/webhook', (req, res) => {
+  const signature = req.headers['x-railway-signature'];
+  const payload = req.body;
+  
+  // Verify webhook signature (optional but recommended)
+  if (WEBHOOK_SECRET && signature && !verifyWebhookSignature(payload, signature)) {
+    console.log('❌ Invalid webhook signature');
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+  
+  let webhookData;
+  try {
+    webhookData = JSON.parse(payload.toString());
+  } catch (error) {
+    console.log('❌ Invalid JSON payload');
+    return res.status(400).json({ error: 'Invalid JSON' });
+  }
+  
+  const { type, project, deployment, environment } = webhookData;
+  
+  // Map Railway event to our notification system
+  const eventType = RAILWAY_EVENT_MAP[type] || type;
   
   const notification = {
     id: Date.now(),
-    project: project || 'unknown',
-    event: event || 'unknown',
-    timestamp: timestamp || new Date().toISOString(),
-    message: message || '',
-    receivedAt: new Date().toISOString()
+    project: project?.name || 'Unknown Project',
+    event: eventType,
+    timestamp: new Date().toISOString(),
+    message: generateEventMessage(type, deployment, environment),
+    receivedAt: new Date().toISOString(),
+    railwayData: {
+      type,
+      projectId: project?.id,
+      deploymentId: deployment?.id,
+      environment: environment?.name,
+      status: deployment?.status,
+      url: deployment?.url
+    }
   };
   
   // Enhanced logging
-  console.log(`🚨 [${notification.receivedAt}] NOTIFICATION RECEIVED:`);
-  console.log(`   Project: ${notification.project}`);
-  console.log(`   Event: ${notification.event}`);
-  console.log(`   Message: ${notification.message}`);
+  console.log(`🚨 [${notification.receivedAt}] RAILWAY WEBHOOK RECEIVED:`);
+  console.log(`   Project: ${notification.project} (${project?.id})`);
+  console.log(`   Event: ${type} → ${eventType}`);
+  console.log(`   Environment: ${environment?.name || 'N/A'}`);
+  console.log(`   Deployment ID: ${deployment?.id || 'N/A'}`);
+  console.log(`   Status: ${deployment?.status || 'N/A'}`);
+  console.log(`   URL: ${deployment?.url || 'N/A'}`);
   console.log(`   Connected clients: ${sseClients.length}`);
   
-  // Store notification (keep last 50)
+  // Store notification (keep last 100)
   recentNotifications.unshift(notification);
-  if (recentNotifications.length > 50) {
-    recentNotifications = recentNotifications.slice(0, 50);
+  if (recentNotifications.length > 100) {
+    recentNotifications = recentNotifications.slice(0, 100);
   }
   
   // Broadcast to all connected SSE clients
   broadcastNotification(notification);
   
   // Send response
+  res.json({ 
+    success: true, 
+    received: notification,
+    playSound: true,
+    clientsNotified: sseClients.length
+  });
+});
+
+// Generate human-readable message from Railway webhook data
+function generateEventMessage(type, deployment, environment) {
+  const env = environment?.name || 'production';
+  const url = deployment?.url;
+  
+  switch (type) {
+    case 'deployment.initialize':
+      return `Deployment initialized for ${env}`;
+    case 'deployment.queued':
+      return `Deployment queued for ${env}`;
+    case 'deployment.building':
+      return `Building deployment for ${env}`;
+    case 'deployment.deploying':
+      return `Deploying to ${env}`;
+    case 'deployment.success':
+      return url ? `Successfully deployed to ${env} at ${url}` : `Successfully deployed to ${env}`;
+    case 'deployment.failed':
+      return `Deployment failed for ${env}`;
+    case 'deployment.crashed':
+      return `Service crashed in ${env}`;
+    case 'deployment.sleeping':
+      return `Service sleeping in ${env}`;
+    case 'deployment.removed':
+      return `Deployment removed from ${env}`;
+    case 'deployment.skipped':
+      return `Deployment skipped for ${env}`;
+    default:
+      return `${type} in ${env}`;
+  }
+}
+
+// Legacy notification endpoint (for backward compatibility)
+app.all('/notify', (req, res) => {
+  const { project, event, timestamp, message } = req.query;
+  
+  const notification = {
+    id: Date.now(),
+    project: project || 'Manual Notification',
+    event: event || 'unknown',
+    timestamp: timestamp || new Date().toISOString(),
+    message: message || '',
+    receivedAt: new Date().toISOString(),
+    isLegacy: true
+  };
+  
+  console.log(`📢 [${notification.receivedAt}] LEGACY NOTIFICATION:`);
+  console.log(`   Project: ${notification.project}`);
+  console.log(`   Event: ${notification.event}`);
+  console.log(`   Message: ${notification.message}`);
+  console.log(`   Connected clients: ${sseClients.length}`);
+  
+  recentNotifications.unshift(notification);
+  if (recentNotifications.length > 100) {
+    recentNotifications = recentNotifications.slice(0, 100);
+  }
+  
+  broadcastNotification(notification);
+  
   res.json({ 
     success: true, 
     received: notification,
@@ -239,13 +366,34 @@ app.get('/', (req, res) => {
     </head>
     <body>
       <div class="container">
-        <h1>🚨 Deployment Alert</h1>
-        <p class="subtitle">Audio notifications for Railway deployment events - zero setup integration</p>
+        <h1>🚨 Railway Deployment Alert</h1>
+        <p class="subtitle">Real-time audio notifications for Railway deployment events via webhooks</p>
         
-        <h2>Your Notification Endpoint</h2>
-        <div class="endpoint">
-          ${req.protocol}://${req.get('host')}/notify
-          <button class="copy-btn" onclick="copyToClipboard('${req.protocol}://${req.get('host')}/notify')">Copy</button>
+        <div style="background: #e6fffa; border: 1px solid #38b2ac; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <h2>🎯 Railway Webhook Setup</h2>
+          <p><strong>Add this webhook URL to your Railway project:</strong></p>
+          <div class="endpoint">
+            ${req.protocol}://${req.get('host')}/webhook
+            <button class="copy-btn" onclick="copyToClipboard('${req.protocol}://${req.get('host')}/webhook')">Copy</button>
+          </div>
+          <p style="margin-top: 15px; color: #2d3748; font-size: 14px;">
+            <strong>Setup Instructions:</strong><br>
+            1. Go to your Railway project settings<br>
+            2. Navigate to "Webhooks" section<br>
+            3. Click "New Webhook"<br>
+            4. Paste the URL above<br>
+            5. Select all deployment events<br>
+            6. Save the webhook
+          </p>
+        </div>
+        
+        <div style="background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <h3>🔧 Legacy Support</h3>
+          <p>Manual notification endpoint (for testing or custom integrations):</p>
+          <div class="endpoint" style="font-size: 14px;">
+            ${req.protocol}://${req.get('host')}/notify
+            <button class="copy-btn" onclick="copyToClipboard('${req.protocol}://${req.get('host')}/notify')">Copy</button>
+          </div>
         </div>
         
         <!-- Sound Customization Section -->
@@ -328,51 +476,79 @@ app.get('/', (req, res) => {
           </div>
         </div>
         
-        <h2>Event Types</h2>
+        <h2>Railway Deployment Events</h2>
         <div class="event-types">
           <div class="event-type">
-            <strong>🔨 build_start</strong><br>
-            When Railway starts building
+            <strong>🔄 initializing</strong><br>
+            Deployment is being initialized
           </div>
           <div class="event-type">
-            <strong>✅ build_success</strong><br>
-            When build completes successfully
+            <strong>⏳ queued</strong><br>
+            Deployment is queued for processing
           </div>
           <div class="event-type">
-            <strong>❌ build_failure</strong><br>
-            When build fails
+            <strong>🔨 building</strong><br>
+            Railway is building your project
           </div>
           <div class="event-type">
-            <strong>🚀 deployment_success</strong><br>
-            When deployment succeeds
+            <strong>🚀 deploying</strong><br>
+            Deployment is in progress
           </div>
           <div class="event-type">
-            <strong>💥 deployment_failure</strong><br>
-            When deployment fails
+            <strong>✅ deployment_success</strong><br>
+            Deployment completed successfully
           </div>
           <div class="event-type">
-            <strong>🚨 service_crash</strong><br>
-            When service crashes
+            <strong>❌ deployment_failure</strong><br>
+            Deployment failed
+          </div>
+          <div class="event-type">
+            <strong>💥 service_crash</strong><br>
+            Service crashed after deployment
+          </div>
+          <div class="event-type">
+            <strong>😴 sleeping</strong><br>
+            Service is sleeping (idle)
+          </div>
+          <div class="event-type">
+            <strong>🗑️ removed</strong><br>
+            Deployment was removed
+          </div>
+          <div class="event-type">
+            <strong>⏭️ skipped</strong><br>
+            Deployment was skipped
           </div>
         </div>
         
-        <h2>Quick Integration Examples</h2>
+        <h2>🚀 Railway Webhook Integration</h2>
         
-        <h3>Node.js (package.json)</h3>
+        <h3>Step 1: Deploy This Service</h3>
         <div class="example">
-{
-  "scripts": {
-    "build": "curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&event=build_start' || true && npm run compile && curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&event=build_success' || (curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&event=build_failure' || true && exit 1)"
-  }
-}
+# Deploy to Railway
+railway login
+railway link [your-project-id]
+railway up
+
+# Or deploy to any hosting service that supports webhooks
         </div>
         
-        <h3>Docker (Dockerfile)</h3>
+        <h3>Step 2: Configure Railway Webhook</h3>
         <div class="example">
-RUN curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&event=build_start' || true
-# ... your build steps ...
-RUN curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&event=build_success' || true
-CMD curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&event=deployment_success' || true && npm start
+1. Go to your Railway project → Settings → Webhooks
+2. Click "New Webhook"
+3. Endpoint: ${req.protocol}://${req.get('host')}/webhook
+4. Select Events:
+   ✅ Initialized    ✅ Queued       ✅ Building
+   ✅ Deploying      ✅ Success      ✅ Failed
+   ✅ Crashed        ✅ Sleeping     ✅ Removed
+5. Save Webhook
+        </div>
+        
+        <h3>Step 3: Open Dashboard & Deploy</h3>
+        <div class="example">
+1. Keep this dashboard open: ${req.protocol}://${req.get('host')}
+2. Deploy your Railway project
+3. Get real-time audio notifications! 🔊
         </div>
         
         <!-- Live Notification Log -->
@@ -632,14 +808,24 @@ CMD curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&even
         // Initialize sound system
         const deploymentSounds = new DeploymentSounds();
 
-        // Sound mapping
+        // Sound mapping for Railway events
         const soundMethods = {
-          build_start: () => deploymentSounds.playBuildStart(),
-          build_success: () => deploymentSounds.playBuildSuccess(),
-          build_failure: () => deploymentSounds.playBuildFailure(),
+          // Railway webhook events
+          initializing: () => deploymentSounds.playInitializing(),
+          queued: () => deploymentSounds.playQueued(),
+          building: () => deploymentSounds.playBuilding(),
+          deploying: () => deploymentSounds.playDeploying(),
           deployment_success: () => deploymentSounds.playDeploymentSuccess(),
           deployment_failure: () => deploymentSounds.playDeploymentFailure(),
-          service_crash: () => deploymentSounds.playServiceCrash()
+          service_crash: () => deploymentSounds.playServiceCrash(),
+          sleeping: () => deploymentSounds.playSleeping(),
+          removed: () => deploymentSounds.playRemoved(),
+          skipped: () => deploymentSounds.playSkipped(),
+          
+          // Legacy events (backward compatibility)
+          build_start: () => deploymentSounds.playBuilding(),
+          build_success: () => deploymentSounds.playDeploymentSuccess(),
+          build_failure: () => deploymentSounds.playDeploymentFailure()
         };
 
         // Main function to play notification sound

@@ -1,54 +1,64 @@
-# Deployment Alert 🚨
+# Railway Deployment Alert 🚨
 
-Audio notifications for Railway deployment events - zero setup integration with real-time dashboard and sound alerts.
+Real-time audio notifications for Railway deployment events via webhooks. Get instant sound alerts for every stage of your deployment pipeline.
 
 ## What This Does
 
-Get instant audio notifications when your Railway deployments start, succeed, fail, or crash. Features a real-time dashboard with live notification log, enhanced logging, and Server-Sent Events for immediate updates.
+Automatically receive audio notifications for all Railway deployment events through webhooks. No manual integration needed - just configure the webhook and get real-time alerts for initializing, building, deploying, success, failures, crashes, and more.
 
 ## Quick Start
 
-1. Install dependencies and start the server:
+1. **Deploy this service:**
 ```bash
+# Clone and deploy
+git clone <this-repo>
+cd deployment-alert
 npm install
 npm start
+
+# Or deploy directly to Railway
+railway login
+railway up
 ```
 
-2. Open the dashboard in your browser:
-```
-http://localhost:3000
-```
+2. **Configure Railway webhook:**
+   - Go to your Railway project → Settings → Webhooks
+   - Click "New Webhook"
+   - Endpoint: `https://your-deployed-app.railway.app/webhook`
+   - Select all deployment events
+   - Save webhook
 
-3. Send test notifications:
-```bash
-# Using the built-in script
-node scripts/deployment-alert.js deployment_success "Test deployment completed!"
-
-# Or via direct HTTP call
-curl "http://localhost:3000/notify?project=my-project&event=deployment_success&message=Deploy completed"
-```
+3. **Open dashboard and deploy:**
+   - Visit your deployed URL
+   - Deploy your Railway project
+   - Get real-time audio notifications! 🔊
 
 ## Features
 
-- 🔊 **Audio Notifications** - Distinct sounds for each event type
-- 📊 **Real-time Dashboard** - Live notification log with connection status
-- 🌐 **Browser Notifications** - Desktop notifications support
-- 📡 **Server-sent Events** - Real-time updates without polling
+- 🎯 **Railway Webhook Integration** - Native support for all Railway deployment events
+- 🔊 **Distinct Audio Notifications** - Unique sounds for each deployment stage
+- 📊 **Real-time Dashboard** - Live notification log with Railway project details
+- 🌐 **Browser Notifications** - Desktop notifications with deployment URLs
+- 📡 **Server-sent Events** - Instant updates without polling
 - 🎵 **Custom Sounds** - Upload your own notification sounds
 - 📱 **Mobile-friendly** - Responsive design works on all devices
-- 🚀 **Zero Setup** - Works out of the box with any deployment system
-- 📈 **Enhanced Logging** - Detailed server logs with client connection tracking
+- 🔐 **Webhook Security** - Optional signature verification
+- 📈 **Enhanced Logging** - Detailed logs with Railway project and deployment info
 
-## Event Types
+## Railway Deployment Events
 
-| Event | Icon | Description | Sound Pattern |
-|-------|------|-------------|---------------|
-| `build_start` | 🔨 | When Railway starts building | Single tone |
-| `build_success` | ✅ | When build completes successfully | Rising chord |
-| `build_failure` | ❌ | When build fails | Descending tones |
-| `deployment_success` | 🚀 | When deployment succeeds | Victory fanfare |
-| `deployment_failure` | 💥 | When deployment fails | Alert pattern |
-| `service_crash` | 🚨 | When service crashes | Urgent alarm |
+| Railway Event | Icon | Description | Sound Pattern |
+|---------------|------|-------------|---------------|
+| `deployment.initialize` | 🔄 | Deployment is being initialized | Soft tone |
+| `deployment.queued` | ⏳ | Deployment is queued for processing | Double beep |
+| `deployment.building` | 🔨 | Railway is building your project | Triangle wave |
+| `deployment.deploying` | 🚀 | Deployment is in progress | Rising tones |
+| `deployment.success` | ✅ | Deployment completed successfully | Victory fanfare |
+| `deployment.failed` | ❌ | Deployment failed | Descending tones |
+| `deployment.crashed` | 💥 | Service crashed after deployment | Urgent alarm |
+| `deployment.sleeping` | 😴 | Service is sleeping (idle) | Gentle fade |
+| `deployment.removed` | 🗑️ | Deployment was removed | Low tone |
+| `deployment.skipped` | ⏭️ | Deployment was skipped | Skip pattern |
 
 ## Integration Examples
 
