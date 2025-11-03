@@ -12,6 +12,8 @@ app.use(express.static('public'));
 
 // Store recent notifications for display
 let recentNotifications = [];
+// Store SSE connections for real-time updates
+let sseClients = [];
 
 // Notification endpoint
 app.all('/notify', (req, res) => {
@@ -22,10 +24,16 @@ app.all('/notify', (req, res) => {
     project: project || 'unknown',
     event: event || 'unknown',
     timestamp: timestamp || new Date().toISOString(),
-    message: message || ''
+    message: message || '',
+    receivedAt: new Date().toISOString()
   };
   
-  console.log(`[${notification.timestamp}] ${notification.project}: ${notification.event}`);
+  // Enhanced logging
+  console.log(`🚨 [${notification.receivedAt}] NOTIFICATION RECEIVED:`);
+  console.log(`   Project: ${notification.project}`);
+  console.log(`   Event: ${notification.event}`);
+  console.log(`   Message: ${notification.message}`);
+  console.log(`   Connected clients: ${sseClients.length}`);
   
   // Store notification (keep last 50)
   recentNotifications.unshift(notification);
@@ -33,11 +41,97 @@ app.all('/notify', (req, res) => {
     recentNotifications = recentNotifications.slice(0, 50);
   }
   
-  // Send to all connected clients (will implement SSE later)
+  // Broadcast to all connected SSE clients
+  broadcastNotification(notification);
+  
+  // Send response
   res.json({ 
     success: true, 
     received: notification,
-    playSound: true  // Signal client to play sound
+    playSound: true,
+    clientsNotified: sseClients.length
+  });
+});
+
+// Broadcast notification to all SSE clients
+function broadcastNotification(notification) {
+  console.log(`📡 Broadcasting to ${sseClients.length} connected clients...`);
+  
+  sseClients.forEach((client, index) => {
+    try {
+      client.write(`data: ${JSON.stringify({
+        type: 'notification',
+        notification: notification
+      })}\n\n`);
+      console.log(`   ✅ Sent to client ${index + 1}`);
+    } catch (error) {
+      console.log(`   ❌ Failed to send to client ${index + 1}:`, error.message);
+      // Remove dead client
+      sseClients.splice(index, 1);
+    }
+  });
+}
+
+// Server-Sent Events endpoint for real-time notifications
+app.get('/events', (req, res) => {
+  console.log('🔌 New SSE client connected');
+  
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Cache-Control'
+  });
+  
+  // Add client to list
+  sseClients.push(res);
+  console.log(`📊 Total connected clients: ${sseClients.length}`);
+  
+  // Send initial connection message
+  res.write(`data: ${JSON.stringify({
+    type: 'connected',
+    message: 'Connected to deployment notifications',
+    clientCount: sseClients.length
+  })}\n\n`);
+  
+  // Send recent notifications
+  if (recentNotifications.length > 0) {
+    res.write(`data: ${JSON.stringify({
+      type: 'history',
+      notifications: recentNotifications.slice(0, 5)
+    })}\n\n`);
+  }
+  
+  // Handle client disconnect
+  req.on('close', () => {
+    console.log('🔌 SSE client disconnected');
+    const index = sseClients.indexOf(res);
+    if (index !== -1) {
+      sseClients.splice(index, 1);
+    }
+    console.log(`📊 Total connected clients: ${sseClients.length}`);
+  });
+  
+  // Keep connection alive
+  const keepAlive = setInterval(() => {
+    try {
+      res.write(`data: ${JSON.stringify({
+        type: 'ping',
+        timestamp: new Date().toISOString()
+      })}\n\n`);
+    } catch (error) {
+      clearInterval(keepAlive);
+      const index = sseClients.indexOf(res);
+      if (index !== -1) {
+        sseClients.splice(index, 1);
+      }
+    }
+  }, 30000); // Ping every 30 seconds
+  
+  req.on('close', () => {
+    clearInterval(keepAlive);
   });
 });
 
@@ -89,6 +183,58 @@ app.get('/', (req, res) => {
         
         /* Event Icons */
         .event-icon { font-size: 20px; }
+        
+        /* Notification Log Styles */
+        .log-entry {
+          display: flex;
+          align-items: flex-start;
+          padding: 8px;
+          border-bottom: 1px solid #f1f5f9;
+          transition: background-color 0.3s ease;
+        }
+        
+        .log-entry.new {
+          background-color: #e6fffa;
+          animation: highlight 2s ease-out;
+        }
+        
+        .log-entry.system-message {
+          background-color: #f7fafc;
+          font-style: italic;
+        }
+        
+        .log-entry.system-message.success {
+          background-color: #f0fff4;
+          color: #22543d;
+        }
+        
+        .log-entry.system-message.error {
+          background-color: #fed7d7;
+          color: #742a2a;
+        }
+        
+        .log-time {
+          min-width: 80px;
+          color: #a0aec0;
+          font-size: 12px;
+          margin-right: 10px;
+          margin-top: 2px;
+        }
+        
+        .log-content {
+          flex: 1;
+          line-height: 1.4;
+        }
+        
+        .log-icon {
+          margin-right: 8px;
+          font-size: 16px;
+        }
+        
+        @keyframes highlight {
+          0% { background-color: #bee3f8; }
+          100% { background-color: #e6fffa; }
+        }
       </style>
     </head>
     <body>
@@ -229,9 +375,33 @@ RUN curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&even
 CMD curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&event=deployment_success' || true && npm start
         </div>
         
+        <!-- Live Notification Log -->
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 30px 0;">
+          <h2>📊 Live Notification Log</h2>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div>
+              <strong>Connection Status:</strong> <span id="connectionStatus">⚪ Disconnected</span>
+            </div>
+            <div id="notificationPermission"></div>
+          </div>
+          
+          <div id="notificationLog" style="background: white; border: 1px solid #e2e8f0; border-radius: 5px; height: 300px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 14px;">
+            <div class="log-entry system-message">
+              <div class="log-time">--:--:--</div>
+              <div class="log-content">
+                <span class="log-icon">💡</span>
+                Waiting for notifications... Send a test notification or trigger a deployment to see live updates here.
+              </div>
+            </div>
+          </div>
+        </div>
+        
         <h3>Test Your Setup</h3>
-        <button onclick="testNotification()" style="background: #48bb78; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+        <button onclick="testNotification()" style="background: #48bb78; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-right: 10px;">
           Send Test Notification
+        </button>
+        <button onclick="connectToNotifications()" style="background: #4299e1; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+          Reconnect to Live Updates
         </button>
         
         <p style="margin-top: 30px; color: #666; font-size: 14px;">
@@ -566,6 +736,207 @@ CMD curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&even
           console.log('Volume set to:', Math.round(volume * 100) + '%');
         }
 
+        // Real-time notification system
+        let eventSource = null;
+        let connectionStatus = 'disconnected';
+        
+        function connectToNotifications() {
+          if (eventSource) {
+            eventSource.close();
+          }
+          
+          console.log('🔌 Connecting to notification stream...');
+          updateConnectionStatus('connecting');
+          
+          eventSource = new EventSource('/events');
+          
+          eventSource.onopen = function() {
+            console.log('✅ Connected to notification stream');
+            updateConnectionStatus('connected');
+          };
+          
+          eventSource.onmessage = function(event) {
+            try {
+              const data = JSON.parse(event.data);
+              console.log('📨 Received SSE message:', data);
+              
+              switch (data.type) {
+                case 'connected':
+                  console.log('🎉 Successfully connected to notifications');
+                  showNotificationLog('Connected to deployment notifications', 'success');
+                  break;
+                  
+                case 'notification':
+                  console.log('🚨 New notification received:', data.notification);
+                  handleNewNotification(data.notification);
+                  break;
+                  
+                case 'history':
+                  console.log('📚 Received notification history:', data.notifications.length, 'items');
+                  data.notifications.forEach(notification => {
+                    displayNotificationInLog(notification, false); // Don't play sound for history
+                  });
+                  break;
+                  
+                case 'ping':
+                  // Keep-alive ping, no action needed
+                  break;
+                  
+                default:
+                  console.log('❓ Unknown message type:', data.type);
+              }
+            } catch (e) {
+              console.error('❌ Error parsing SSE message:', e);
+            }
+          };
+          
+          eventSource.onerror = function(event) {
+            console.error('❌ SSE connection error:', event);
+            updateConnectionStatus('error');
+            
+            // Attempt to reconnect after 5 seconds
+            setTimeout(() => {
+              if (connectionStatus === 'error') {
+                console.log('🔄 Attempting to reconnect...');
+                connectToNotifications();
+              }
+            }, 5000);
+          };
+        }
+        
+        function updateConnectionStatus(status) {
+          connectionStatus = status;
+          const statusElement = document.getElementById('connectionStatus');
+          if (statusElement) {
+            switch (status) {
+              case 'connected':
+                statusElement.innerHTML = '🟢 Connected';
+                statusElement.style.color = '#48bb78';
+                break;
+              case 'connecting':
+                statusElement.innerHTML = '🟡 Connecting...';
+                statusElement.style.color = '#ed8936';
+                break;
+              case 'error':
+                statusElement.innerHTML = '🔴 Disconnected';
+                statusElement.style.color = '#f56565';
+                break;
+              default:
+                statusElement.innerHTML = '⚪ Unknown';
+                statusElement.style.color = '#a0aec0';
+            }
+          }
+        }
+        
+        function handleNewNotification(notification) {
+          console.log('🎵 Processing notification for sound:', notification.event);
+          
+          // Display in log
+          displayNotificationInLog(notification, true);
+          
+          // Play sound
+          playNotificationSound(notification.event);
+          
+          // Show browser notification if permission granted
+          if (Notification.permission === 'granted') {
+            new Notification(\`Deployment Alert: \${notification.project}\`, {
+              body: \`\${notification.event}: \${notification.message}\`,
+              icon: '/favicon.ico'
+            });
+          }
+        }
+        
+        function displayNotificationInLog(notification, isNew = false) {
+          const logContainer = document.getElementById('notificationLog');
+          if (!logContainer) return;
+          
+          const logEntry = document.createElement('div');
+          logEntry.className = \`log-entry \${isNew ? 'new' : ''}\`;
+          
+          const eventIcon = getEventIcon(notification.event);
+          const timestamp = new Date(notification.receivedAt || notification.timestamp).toLocaleTimeString();
+          
+          logEntry.innerHTML = \`
+            <div class="log-time">\${timestamp}</div>
+            <div class="log-content">
+              <span class="log-icon">\${eventIcon}</span>
+              <strong>\${notification.project}</strong>: \${notification.event}
+              \${notification.message ? \`<br><small>\${notification.message}</small>\` : ''}
+            </div>
+          \`;
+          
+          logContainer.insertBefore(logEntry, logContainer.firstChild);
+          
+          // Keep only last 20 entries
+          while (logContainer.children.length > 20) {
+            logContainer.removeChild(logContainer.lastChild);
+          }
+          
+          // Remove 'new' class after animation
+          if (isNew) {
+            setTimeout(() => {
+              logEntry.classList.remove('new');
+            }, 2000);
+          }
+        }
+        
+        function getEventIcon(event) {
+          const icons = {
+            build_start: '🔨',
+            build_success: '✅',
+            build_failure: '❌',
+            deployment_success: '🚀',
+            deployment_failure: '💥',
+            service_crash: '🚨'
+          };
+          return icons[event] || '📢';
+        }
+        
+        function showNotificationLog(message, type = 'info') {
+          const logContainer = document.getElementById('notificationLog');
+          if (!logContainer) return;
+          
+          const logEntry = document.createElement('div');
+          logEntry.className = \`log-entry system-message \${type}\`;
+          logEntry.innerHTML = \`
+            <div class="log-time">\${new Date().toLocaleTimeString()}</div>
+            <div class="log-content">
+              <span class="log-icon">ℹ️</span>
+              \${message}
+            </div>
+          \`;
+          
+          logContainer.insertBefore(logEntry, logContainer.firstChild);
+        }
+        
+        // Request notification permission
+        function requestNotificationPermission() {
+          if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().then(permission => {
+              console.log('Notification permission:', permission);
+              updateNotificationPermissionStatus();
+            });
+          }
+        }
+        
+        function updateNotificationPermissionStatus() {
+          const statusElement = document.getElementById('notificationPermission');
+          if (statusElement && 'Notification' in window) {
+            switch (Notification.permission) {
+              case 'granted':
+                statusElement.innerHTML = '🔔 Browser notifications enabled';
+                statusElement.style.color = '#48bb78';
+                break;
+              case 'denied':
+                statusElement.innerHTML = '🔕 Browser notifications blocked';
+                statusElement.style.color = '#f56565';
+                break;
+              default:
+                statusElement.innerHTML = '<button onclick="requestNotificationPermission()" class="btn btn-secondary">Enable Browser Notifications</button>';
+            }
+          }
+        }
+
         // Other functions
         function copyToClipboard(text) {
           navigator.clipboard.writeText(text).then(() => {
@@ -574,22 +945,21 @@ CMD curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&even
         }
         
         function testNotification() {
-          fetch('/notify?project=test&event=build_success&message=Test notification')
+          fetch('/notify?project=test&event=deployment_success&message=Test notification from web interface')
             .then(res => res.json())
             .then(data => {
-              alert('Test notification sent! You should hear a sound if audio is enabled.');
-              console.log('Test notification response:', data);
-              // Play the sound for the test
-              playNotificationSound('build_success');
+              console.log('✅ Test notification sent:', data);
+              showNotificationLog(\`Test notification sent (notified \${data.clientsNotified} clients)\`, 'success');
             })
             .catch(err => {
-              alert('Error sending test notification: ' + err.message);
+              console.error('❌ Error sending test notification:', err);
+              showNotificationLog('Error sending test notification: ' + err.message, 'error');
             });
         }
         
         // Initialize volume display and sound system
         document.addEventListener('DOMContentLoaded', function() {
-          console.log('Page loaded, initializing sound system...');
+          console.log('🚀 Page loaded, initializing deployment alert system...');
           
           const volumeSlider = document.getElementById('volume');
           const volumeDisplay = document.getElementById('volumeDisplay');
@@ -613,15 +983,23 @@ CMD curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&even
             }
           });
           
+          // Initialize notification permission status
+          updateNotificationPermissionStatus();
+          
+          // Connect to live notifications
+          connectToNotifications();
+          
           // Add click handler to initialize audio on first interaction
           document.body.addEventListener('click', function initAudio() {
-            console.log('First click detected, initializing audio...');
+            console.log('🎵 First click detected, initializing audio...');
             if (window.deploymentSounds) {
               deploymentSounds.initAudio().then(success => {
                 if (success) {
-                  console.log('Audio system ready!');
+                  console.log('✅ Audio system ready!');
+                  showNotificationLog('Audio system initialized - sounds will now play', 'success');
                 } else {
-                  console.warn('Audio system failed to initialize');
+                  console.warn('❌ Audio system failed to initialize');
+                  showNotificationLog('Audio system failed to initialize - check browser permissions', 'error');
                 }
               });
             }
