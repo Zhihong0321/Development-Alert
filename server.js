@@ -387,13 +387,70 @@ app.get('/', (req, res) => {
           </p>
         </div>
         
+        <h2>📋 Supported Railway Webhook Events</h2>
+        <div class="event-types">
+          <div class="event-type">
+            <strong>🚀 deployment.initialize</strong><br>
+            Deployment process starts
+          </div>
+          <div class="event-type">
+            <strong>⏳ deployment.queued</strong><br>
+            Deployment added to queue
+          </div>
+          <div class="event-type">
+            <strong>🔨 deployment.building</strong><br>
+            Build process started
+          </div>
+          <div class="event-type">
+            <strong>📦 deployment.deploying</strong><br>
+            Deploying to environment
+          </div>
+          <div class="event-type">
+            <strong>✅ deployment.success</strong><br>
+            Deployment completed successfully
+          </div>
+          <div class="event-type">
+            <strong>❌ deployment.failed</strong><br>
+            Deployment failed
+          </div>
+          <div class="event-type">
+            <strong>💥 deployment.crashed</strong><br>
+            Service crashed after deployment
+          </div>
+          <div class="event-type">
+            <strong>😴 deployment.sleeping</strong><br>
+            Service went to sleep
+          </div>
+          <div class="event-type">
+            <strong>🗑️ deployment.removed</strong><br>
+            Deployment was removed
+          </div>
+          <div class="event-type">
+            <strong>⏭️ deployment.skipped</strong><br>
+            Deployment was skipped
+          </div>
+        </div>
+        
         <div style="background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin: 20px 0;">
-          <h3>🔧 Legacy Support</h3>
-          <p>Manual notification endpoint (for testing or custom integrations):</p>
+          <h3>🔧 Manual Testing Endpoint</h3>
+          <p>For testing or custom integrations (legacy support):</p>
           <div class="endpoint" style="font-size: 14px;">
-            ${req.protocol}://${req.get('host')}/notify
+            ${req.protocol}://${req.get('host')}/notify?project=PROJECT&event=EVENT&message=MESSAGE
             <button class="copy-btn" onclick="copyToClipboard('${req.protocol}://${req.get('host')}/notify')">Copy</button>
           </div>
+          <p style="font-size: 12px; color: #666; margin-top: 10px;">
+            Example: <code>/notify?project=my-app&event=deployment_success&message=Deploy completed</code>
+          </p>
+        </div>
+        
+        <div style="background: #fff5f5; border: 1px solid #feb2b2; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <h3>⚠️ Important Notes</h3>
+          <ul style="margin: 10px 0; padding-left: 20px;">
+            <li>Keep this dashboard open in your browser to receive audio notifications</li>
+            <li>Click anywhere on the page to enable audio (browser requirement)</li>
+            <li>Webhook events are automatically processed - no manual setup needed</li>
+            <li>All events are logged in real-time with full Railway deployment details</li>
+          </ul>
         </div>
         
         <!-- Sound Customization Section -->
@@ -572,13 +629,43 @@ railway up
           </div>
         </div>
         
-        <h3>Test Your Setup</h3>
-        <button onclick="testNotification()" style="background: #48bb78; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-right: 10px;">
-          Send Test Notification
-        </button>
-        <button onclick="connectToNotifications()" style="background: #4299e1; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-          Reconnect to Live Updates
-        </button>
+        <h3>🧪 Test Your Setup</h3>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin: 15px 0;">
+          <button onclick="testNotification()" style="background: #48bb78; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+            🚀 Test Deployment Success
+          </button>
+          <button onclick="testWebhook('deployment.building')" style="background: #ed8936; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+            🔨 Test Building Event
+          </button>
+          <button onclick="testWebhook('deployment.failed')" style="background: #f56565; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+            ❌ Test Failure Event
+          </button>
+          <button onclick="connectToNotifications()" style="background: #4299e1; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+            🔄 Reconnect
+          </button>
+        </div>
+        
+        <div style="background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <h4>📊 Webhook Payload Example</h4>
+          <p style="margin-bottom: 10px;">Railway sends webhook payloads like this:</p>
+          <div class="example" style="font-size: 12px;">
+{
+  "type": "deployment.success",
+  "project": {
+    "id": "abc123",
+    "name": "my-awesome-app"
+  },
+  "deployment": {
+    "id": "def456", 
+    "status": "SUCCESS",
+    "url": "https://my-app.railway.app"
+  },
+  "environment": {
+    "name": "production"
+  }
+}
+          </div>
+        </div>
         
         <p style="margin-top: 30px; color: #666; font-size: 14px;">
           Replace MY_PROJECT with your actual project name. The || true ensures builds don't fail if notifications fail.
@@ -1141,6 +1228,41 @@ railway up
               console.error('❌ Error sending test notification:', err);
               showNotificationLog('Error sending test notification: ' + err.message, 'error');
             });
+        }
+        
+        function testWebhook(eventType) {
+          const testPayload = {
+            type: eventType,
+            project: {
+              id: 'test-project-123',
+              name: 'Test Project'
+            },
+            deployment: {
+              id: 'test-deployment-456',
+              status: eventType.includes('success') ? 'SUCCESS' : eventType.includes('failed') ? 'FAILED' : 'BUILDING',
+              url: eventType.includes('success') ? 'https://test-app.railway.app' : null
+            },
+            environment: {
+              name: 'production'
+            }
+          };
+          
+          fetch('/webhook', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(testPayload)
+          })
+          .then(res => res.json())
+          .then(data => {
+            console.log('✅ Test webhook sent:', data);
+            showNotificationLog(\`Test webhook \${eventType} sent (notified \${data.clientsNotified} clients)\`, 'success');
+          })
+          .catch(err => {
+            console.error('❌ Error sending test webhook:', err);
+            showNotificationLog('Error sending test webhook: ' + err.message, 'error');
+          });
         }
         
         // Initialize volume display and sound system
