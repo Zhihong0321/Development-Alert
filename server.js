@@ -261,8 +261,10 @@ CMD curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&even
             });
         }
         
-        // Initialize volume display
+        // Initialize volume display and sound system
         document.addEventListener('DOMContentLoaded', function() {
+          console.log('Page loaded, initializing sound system...');
+          
           const volumeSlider = document.getElementById('volume');
           const volumeDisplay = document.getElementById('volumeDisplay');
           
@@ -284,6 +286,22 @@ CMD curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&even
               updateSoundStatus(eventType, 'Custom sound loaded');
             }
           });
+          
+          // Add click handler to initialize audio on first interaction
+          document.body.addEventListener('click', function initAudio() {
+            console.log('First click detected, initializing audio...');
+            if (window.deploymentSounds) {
+              deploymentSounds.initAudio().then(success => {
+                if (success) {
+                  console.log('Audio system ready!');
+                } else {
+                  console.warn('Audio system failed to initialize');
+                }
+              });
+            }
+            // Remove this listener after first click
+            document.body.removeEventListener('click', initAudio);
+          }, { once: true });
         });
       </script>
     </body>
