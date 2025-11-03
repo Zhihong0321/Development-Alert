@@ -239,8 +239,334 @@ CMD curl -f '${req.protocol}://${req.get('host')}/notify?project=MY_PROJECT&even
         </p>
       </div>
       
-      <script src="/sounds.js"></script>
       <script>
+        // Sound system with better browser compatibility
+        class DeploymentSounds {
+          constructor() {
+            this.audioContext = null;
+            this.isInitialized = false;
+            this.volume = 0.7;
+            this.loadSettings();
+          }
+
+          // Initialize audio context (must be called after user interaction)
+          async initAudio() {
+            if (this.isInitialized) return true;
+            
+            try {
+              this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+              
+              // Resume if suspended (browser autoplay policy)
+              if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+              }
+              
+              this.isInitialized = true;
+              console.log('Audio initialized successfully');
+              return true;
+            } catch (e) {
+              console.warn('Web Audio API not supported:', e);
+              return false;
+            }
+          }
+
+          // Load settings from localStorage
+          loadSettings() {
+            this.volume = parseFloat(localStorage.getItem('volume') || '0.7');
+          }
+
+          // Generate a tone
+          async generateTone(frequency, duration, type = 'sine', volume = null) {
+            if (!await this.initAudio()) return;
+            
+            const oscillator = this.audioContext.createOscillator();
+            const gainNode = this.audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(this.audioContext.destination);
+
+            oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+            oscillator.type = type;
+
+            const vol = (volume !== null ? volume : this.volume) * 0.3; // Reduce volume to prevent distortion
+            
+            // Smooth envelope
+            gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(vol, this.audioContext.currentTime + 0.01);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
+
+            oscillator.start(this.audioContext.currentTime);
+            oscillator.stop(this.audioContext.currentTime + duration);
+          }
+
+          // Generate sequence of tones
+          async generateSequence(notes, noteDuration = 0.2) {
+            for (let i = 0; i < notes.length; i++) {
+              const note = notes[i];
+              setTimeout(() => {
+                this.generateTone(note.frequency, noteDuration, note.type || 'sine');
+              }, i * noteDuration * 1000);
+            }
+          }
+
+          // Fallback: Play simple beep using HTML5 Audio with data URL
+          playFallbackBeep(frequency = 800, duration = 200) {
+            try {
+              // Create a simple beep sound as data URL
+              const beepSound = this.createBeepDataURL(frequency, duration);
+              const audio = new Audio(beepSound);
+              audio.volume = this.volume * 0.5;
+              audio.play().catch(e => console.warn('Fallback beep failed:', e));
+              console.log('Playing fallback beep');
+            } catch (e) {
+              console.warn('Fallback beep failed:', e);
+            }
+          }
+
+          // Create a simple beep sound as data URL (very basic)
+          createBeepDataURL(frequency, duration) {
+            // This is a very simple approach - just return a short data URL for a basic sound
+            // In a real implementation, you'd generate actual audio data
+            return "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT";
+          }
+
+          // Play custom sound from file
+          async playCustomSound(base64Data) {
+            try {
+              const audio = new Audio(base64Data);
+              audio.volume = this.volume;
+              await audio.play();
+              console.log('Playing custom sound');
+            } catch (e) {
+              console.warn('Could not play custom sound:', e);
+              throw e;
+            }
+          }
+
+          // Default sound patterns with fallback
+          async playBuildStart() {
+            console.log('Playing build start sound');
+            try {
+              if (await this.initAudio()) {
+                await this.generateTone(440, 0.3, 'sine');
+              } else {
+                this.playFallbackBeep(440, 300);
+              }
+            } catch (e) {
+              console.warn('Build start sound failed, using fallback');
+              this.playFallbackBeep(440, 300);
+            }
+          }
+
+          async playBuildSuccess() {
+            console.log('Playing build success sound');
+            try {
+              if (await this.initAudio()) {
+                await this.generateSequence([
+                  { frequency: 523, type: 'sine' },  // C5
+                  { frequency: 659, type: 'sine' },  // E5
+                  { frequency: 784, type: 'sine' }   // G5
+                ], 0.15);
+              } else {
+                this.playFallbackBeep(659, 200);
+              }
+            } catch (e) {
+              console.warn('Build success sound failed, using fallback');
+              this.playFallbackBeep(659, 200);
+            }
+          }
+
+          async playBuildFailure() {
+            console.log('Playing build failure sound');
+            try {
+              if (await this.initAudio()) {
+                await this.generateSequence([
+                  { frequency: 400, type: 'sawtooth' },
+                  { frequency: 300, type: 'sawtooth' },
+                  { frequency: 200, type: 'sawtooth' }
+                ], 0.2);
+              } else {
+                this.playFallbackBeep(300, 400);
+              }
+            } catch (e) {
+              console.warn('Build failure sound failed, using fallback');
+              this.playFallbackBeep(300, 400);
+            }
+          }
+
+          async playDeploymentSuccess() {
+            console.log('Playing deployment success sound');
+            try {
+              if (await this.initAudio()) {
+                await this.generateSequence([
+                  { frequency: 523, type: 'sine' },  // C5
+                  { frequency: 659, type: 'sine' },  // E5
+                  { frequency: 784, type: 'sine' },  // G5
+                  { frequency: 1047, type: 'sine' }  // C6
+                ], 0.12);
+              } else {
+                this.playFallbackBeep(784, 150);
+              }
+            } catch (e) {
+              console.warn('Deployment success sound failed, using fallback');
+              this.playFallbackBeep(784, 150);
+            }
+          }
+
+          async playDeploymentFailure() {
+            console.log('Playing deployment failure sound');
+            try {
+              if (await this.initAudio()) {
+                await this.generateSequence([
+                  { frequency: 800, type: 'square' },
+                  { frequency: 600, type: 'square' },
+                  { frequency: 800, type: 'square' },
+                  { frequency: 600, type: 'square' }
+                ], 0.15);
+              } else {
+                this.playFallbackBeep(700, 300);
+              }
+            } catch (e) {
+              console.warn('Deployment failure sound failed, using fallback');
+              this.playFallbackBeep(700, 300);
+            }
+          }
+
+          async playServiceCrash() {
+            console.log('Playing service crash sound');
+            try {
+              if (await this.initAudio()) {
+                await this.generateSequence([
+                  { frequency: 1000, type: 'sawtooth' },
+                  { frequency: 800, type: 'sawtooth' },
+                  { frequency: 1000, type: 'sawtooth' },
+                  { frequency: 800, type: 'sawtooth' },
+                  { frequency: 1000, type: 'sawtooth' }
+                ], 0.1);
+              } else {
+                this.playFallbackBeep(900, 100);
+              }
+            } catch (e) {
+              console.warn('Service crash sound failed, using fallback');
+              this.playFallbackBeep(900, 100);
+            }
+          }
+
+          // Set volume
+          setVolume(volume) {
+            this.volume = volume;
+            localStorage.setItem('volume', volume);
+          }
+        }
+
+        // Initialize sound system
+        const deploymentSounds = new DeploymentSounds();
+
+        // Sound mapping
+        const soundMethods = {
+          build_start: () => deploymentSounds.playBuildStart(),
+          build_success: () => deploymentSounds.playBuildSuccess(),
+          build_failure: () => deploymentSounds.playBuildFailure(),
+          deployment_success: () => deploymentSounds.playDeploymentSuccess(),
+          deployment_failure: () => deploymentSounds.playDeploymentFailure(),
+          service_crash: () => deploymentSounds.playServiceCrash()
+        };
+
+        // Main function to play notification sound
+        async function playNotificationSound(eventType) {
+          try {
+            console.log('Playing notification sound for:', eventType);
+            
+            // Check for custom sound first
+            const customSound = localStorage.getItem(\`sound_\${eventType}\`);
+            if (customSound) {
+              await deploymentSounds.playCustomSound(customSound);
+            } else if (soundMethods[eventType]) {
+              await soundMethods[eventType]();
+            } else {
+              console.warn('Unknown event type:', eventType);
+            }
+          } catch (e) {
+            console.error('Error playing sound:', e);
+            updateSoundStatus(eventType, 'Error playing sound - check browser permissions');
+          }
+        }
+
+        // Test sound function
+        async function testSound(eventType) {
+          console.log('Testing sound for:', eventType);
+          try {
+            await playNotificationSound(eventType);
+            updateSoundStatus(eventType, 'Sound test successful!');
+          } catch (e) {
+            console.error('Sound test failed:', e);
+            updateSoundStatus(eventType, 'Sound test failed - click to enable audio');
+          }
+        }
+
+        // Upload custom sound
+        function uploadCustomSound(eventType, file) {
+          if (!file) {
+            console.warn('No file selected');
+            return;
+          }
+          
+          console.log('Uploading custom sound for:', eventType, file.name);
+          updateSoundStatus(eventType, 'Uploading...');
+          
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            try {
+              localStorage.setItem(\`sound_\${eventType}\`, e.target.result);
+              updateSoundStatus(eventType, \`Custom sound uploaded: \${file.name}\`);
+              console.log('Custom sound saved for:', eventType);
+            } catch (err) {
+              console.error('Error saving custom sound:', err);
+              updateSoundStatus(eventType, 'Error uploading sound');
+            }
+          };
+          reader.onerror = function() {
+            console.error('Error reading file');
+            updateSoundStatus(eventType, 'Error reading file');
+          };
+          reader.readAsDataURL(file);
+        }
+
+        // Remove custom sound
+        function removeCustomSound(eventType) {
+          localStorage.removeItem(\`sound_\${eventType}\`);
+          updateSoundStatus(eventType, 'Reset to default sound');
+          console.log('Removed custom sound for:', eventType);
+        }
+
+        // Update sound status display
+        function updateSoundStatus(eventType, message) {
+          const statusElement = document.getElementById(\`status_\${eventType}\`);
+          if (statusElement) {
+            statusElement.textContent = message;
+            statusElement.style.color = '#48bb78';
+            setTimeout(() => {
+              if (statusElement.textContent === message) {
+                statusElement.style.color = '#666';
+                // Show current status
+                const customSound = localStorage.getItem(\`sound_\${eventType}\`);
+                if (customSound) {
+                  statusElement.textContent = 'Custom sound loaded';
+                } else {
+                  statusElement.textContent = 'Using default sound';
+                }
+              }
+            }, 3000);
+          }
+        }
+
+        // Set volume
+        function setVolume(volume) {
+          deploymentSounds.setVolume(volume);
+          console.log('Volume set to:', Math.round(volume * 100) + '%');
+        }
+
+        // Other functions
         function copyToClipboard(text) {
           navigator.clipboard.writeText(text).then(() => {
             alert('Copied to clipboard!');
