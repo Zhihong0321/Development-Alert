@@ -373,8 +373,8 @@ app.get('/', (req, res) => {
           <h2>🎯 Railway Webhook Setup</h2>
           <p><strong>Add this webhook URL to your Railway project:</strong></p>
           <div class="endpoint">
-            ${req.protocol}://${req.get('host')}/webhook
-            <button class="copy-btn" onclick="copyToClipboard('${req.protocol}://${req.get('host')}/webhook')">Copy</button>
+            ${req.get('host').includes('railway.app') ? 'https' : req.protocol}://${req.get('host')}/webhook
+            <button class="copy-btn" onclick="copyToClipboard('${req.get('host').includes('railway.app') ? 'https' : req.protocol}://${req.get('host')}/webhook')">Copy</button>
           </div>
           <p style="margin-top: 15px; color: #2d3748; font-size: 14px;">
             <strong>Setup Instructions:</strong><br>
@@ -435,8 +435,8 @@ app.get('/', (req, res) => {
           <h3>🔧 Manual Testing Endpoint</h3>
           <p>For testing or custom integrations (legacy support):</p>
           <div class="endpoint" style="font-size: 14px;">
-            ${req.protocol}://${req.get('host')}/notify?project=PROJECT&event=EVENT&message=MESSAGE
-            <button class="copy-btn" onclick="copyToClipboard('${req.protocol}://${req.get('host')}/notify')">Copy</button>
+            ${req.get('host').includes('railway.app') ? 'https' : req.protocol}://${req.get('host')}/notify?project=PROJECT&event=EVENT&message=MESSAGE
+            <button class="copy-btn" onclick="copyToClipboard('${req.get('host').includes('railway.app') ? 'https' : req.protocol}://${req.get('host')}/notify')">Copy</button>
           </div>
           <p style="font-size: 12px; color: #666; margin-top: 10px;">
             Example: <code>/notify?project=my-app&event=deployment_success&message=Deploy completed</code>
@@ -444,8 +444,9 @@ app.get('/', (req, res) => {
         </div>
         
         <div style="background: #fff5f5; border: 1px solid #feb2b2; border-radius: 8px; padding: 15px; margin: 20px 0;">
-          <h3>⚠️ Important Notes</h3>
+          <h3>⚠️ Important Security Notes</h3>
           <ul style="margin: 10px 0; padding-left: 20px;">
+            <li><strong>HTTPS Required:</strong> Railway webhooks require HTTPS endpoints (automatically handled when deployed)</li>
             <li>Keep this dashboard open in your browser to receive audio notifications</li>
             <li>Click anywhere on the page to enable audio (browser requirement)</li>
             <li>Webhook events are automatically processed - no manual setup needed</li>
@@ -593,7 +594,7 @@ railway up
         <div class="example">
 1. Go to your Railway project → Settings → Webhooks
 2. Click "New Webhook"
-3. Endpoint: ${req.protocol}://${req.get('host')}/webhook
+3. Endpoint: ${req.get('host').includes('railway.app') ? 'https' : req.protocol}://${req.get('host')}/webhook
 4. Select Events:
    ✅ Initialized    ✅ Queued       ✅ Building
    ✅ Deploying      ✅ Success      ✅ Failed
@@ -603,7 +604,7 @@ railway up
         
         <h3>Step 3: Open Dashboard & Deploy</h3>
         <div class="example">
-1. Keep this dashboard open: ${req.protocol}://${req.get('host')}
+1. Keep this dashboard open: ${req.get('host').includes('railway.app') ? 'https' : req.protocol}://${req.get('host')}
 2. Deploy your Railway project
 3. Get real-time audio notifications! 🔊
         </div>

@@ -95,20 +95,20 @@ Add to your Railway deployment hooks:
 
 ```bash
 # Build start hook
-curl -f "http://your-notification-server.com/notify?project=$RAILWAY_PROJECT_NAME&event=build_start" || true
+curl -f "https://your-notification-server.railway.app/notify?project=$RAILWAY_PROJECT_NAME&event=build_start" || true
 
 # Build success hook  
-curl -f "http://your-notification-server.com/notify?project=$RAILWAY_PROJECT_NAME&event=build_success" || true
+curl -f "https://your-notification-server.railway.app/notify?project=$RAILWAY_PROJECT_NAME&event=build_success" || true
 
 # Deployment success hook
-curl -f "http://your-notification-server.com/notify?project=$RAILWAY_PROJECT_NAME&event=deployment_success&message=Deployed to $RAILWAY_ENVIRONMENT" || true
+curl -f "https://your-notification-server.railway.app/notify?project=$RAILWAY_PROJECT_NAME&event=deployment_success&message=Deployed to $RAILWAY_ENVIRONMENT" || true
 ```
 
 ### Docker Integration
 
 ```dockerfile
 # Dockerfile
-ARG NOTIFICATION_URL=http://localhost:3000
+ARG NOTIFICATION_URL=https://your-notification-server.railway.app
 ARG PROJECT_NAME=my-project
 
 # Notify build start
@@ -176,7 +176,7 @@ eventSource.onmessage = function(event) {
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PORT` | Server port | `3000` |
-| `NOTIFICATION_URL` | Notification server URL for scripts | `http://localhost:3000` |
+| `NOTIFICATION_URL` | Notification server URL for scripts | `https://your-app.railway.app` (production) or `http://localhost:3000` (local) |
 | `PROJECT_NAME` | Default project name for scripts | Current directory name |
 
 ## Dashboard Features

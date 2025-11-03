@@ -7,7 +7,9 @@
  * Usage: node scripts/deployment-alert.js [event_type] [message]
  * 
  * Environment Variables:
- * - NOTIFICATION_URL: URL of the notification server (default: http://localhost:3000)
+ * - NOTIFICATION_URL: URL of the notification server 
+ *   - Production: https://your-app.railway.app
+ *   - Local: http://localhost:3000 (default)
  * - PROJECT_NAME: Name of the project (default: current directory name)
  */
 
